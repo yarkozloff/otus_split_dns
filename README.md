@@ -71,17 +71,24 @@ IP-адреса DNS-серверов
   become: yes
   tasks:
 #Установка пакетов bind, bind-utils и ntp
-  - name: install packages
-    yum: name={{ item }} state=latest
-    with_items:
-      - bind
-      - bind-utils
-      - ntp
-
+#  - name: install packages
+#    yum:
+#      name:
+#        - bind
+#        - bind-utils
+#        - ntp
+#        - vim
+#      state: latest
+#      update_cache: true
 #Копирование файла named.zonetransfer.key на хосты с правами 0644
 #Владелец файла — root, група файла — named
   - name: copy transferkey to all servers and the client
     copy: src=named.zonetransfer.key dest=/etc/named.zonetransfer.key owner=root group=named mode=0644
+#Настройка одинакового времени с помощью NTP
+  - name: stop and disable chronyd
+    service: name=chronyd state=stopped enabled=no
+  - name: start and enable ntpd
+    service: name=ntpd state=started enabled=yes
 
 #Настройка хоста ns01
 - hosts: ns01
@@ -90,24 +97,36 @@ IP-адреса DNS-серверов
 #Копирование конфигурации DNS-сервера
   - name: copy named.conf
     copy: src=master-named.conf dest=/etc/named.conf owner=root group=named mode=0640
-
+   
 #Копирование файлов с настроками зоны.
-#Будут скопированы все файлы, в имя которых начинается на «named.d»
   - name: copy zones
-    copy: src={{ item }} dest=/etc/named/ owner=root group=named mode=0660
+    copy: 
+      src: "{{ item }}" 
+      dest: /etc/named/ 
+      owner: root 
+      group: named 
+      mode: 0660
     with_fileglob:
       - named.d*
+      - named.newdns.lab
+
+#Перезапуск службы Named и добавление её в автозагрузку
+  - name: ensure named is running and enabled
+    service:
+      name: named
+      state: restarted
+      enabled: yes
 
 #Копирование файла resolv.conf
   - name: copy resolv.conf to the servers
-    copy: src=servers-resolv.conf dest=/etc/resolv.conf owner=root group=root mode=0644
-
+    template: src=servers-resolv.conf.j2 dest=/etc/resolv.conf owner=root group=root mode=0644
+  
 #Изменение прав каталога /etc/named
 #Права 670, владелец — root, группа — named
   - name: set /etc/named permissions
     file: path=/etc/named owner=root group=named mode=0670
 
-#Перезапуск службы Named и добавление её в автозагрузку
+#Перезапуск службы Named и добавление её в автозагрузку    
   - name: ensure named is running and enabled
     service: name=named state=restarted enabled=yes
 
@@ -117,8 +136,9 @@ IP-адреса DNS-серверов
   tasks:
   - name: copy named.conf
     copy: src=slave-named.conf dest=/etc/named.conf owner=root group=named mode=0640
+ 
   - name: copy resolv.conf to the servers
-    copy: src=servers-resolv.conf dest=/etc/resolv.conf owner=root group=root mode=0644
+    template: src=servers-resolv.conf.j2 dest=/etc/resolv.conf owner=root group=root mode=0644
 
   - name: set /etc/named permissions
     file: path=/etc/named owner=root group=named mode=0670
@@ -126,13 +146,13 @@ IP-адреса DNS-серверов
   - name: ensure named is running and enabled
     service: name=named state=restarted enabled=yes
 
-#Настройка клиентских машин
+#Настройка клиентских машин    
 - hosts: client,client2
   become: yes
   tasks:
   - name: copy resolv.conf to the client
     copy: src=client-resolv.conf dest=/etc/resolv.conf owner=root group=root mode=0644
-
+  
 #Копирование конфигруационного файла rndc
   - name: copy rndc conf file
     copy: src=rndc.conf dest=/home/vagrant/rndc.conf owner=vagrant group=vagrant mode=0644
